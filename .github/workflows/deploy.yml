@@ -1,0 +1,30 @@
+name: Deploy to Azure
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Login to Azure
+      run: az login --service-principal -u ${{ secrets.AZURE_CLIENT_ID }} -p ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
+
+    - name: Build and push Docker image
+      run: |
+        az acr login --name jobappacr
+        docker build -t jobappacr.azurecr.io/jobapp-flask:latest .
+        docker push jobappacr.azurecr.io/jobapp-flask:latest
+
+    - name: Deploy to Azure container instance
+      run: |
+        az container create --resource-group jobapp-rg --name jobapp-container \
+          --image jobappacr.azurecr.io/jobapp-flask:latest --dns-name-label jobapp-flask \
+          --registry-login-server jobappacr.azurecr.io --registry-username ${{ secrets.AZURE_ACR_USERNAME }} \
+          --registry-password ${{ secrets.AZURE_ACR_PASSWORD }} --ports 5000
