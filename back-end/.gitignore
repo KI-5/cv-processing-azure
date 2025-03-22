@@ -1,0 +1,6 @@
+__pycache__/
+*.__pycache__
+#environment variables ignore
+.env
+#docker artifacts
+docker-compose.override.yml
