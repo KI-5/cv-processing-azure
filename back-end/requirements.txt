@@ -16,4 +16,6 @@ python-docx
 python-dotenv
 pyodbc
 azure-storage-blob
+azure-ai-vision
+smtplib
 pymssql

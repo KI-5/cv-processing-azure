@@ -2,18 +2,37 @@ from flask import Flask, request, jsonify
 import os
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
-from upload_to_drive import upload_to_drive
-from cv_processing import extract_cv_data
-# from process_cv import extract_cv_data
-from sheets import store_in_google_sheets
-from webhook import send_webhook
-from email_to_send import send_followup_email
+from azure.storage.blob import BlobServiceClient
+# from azure.ai.vision import VisionClient
+# from email.mime.text import MIMEText
+# from email.mime.multipart import MIMEMultipart
 import logging
 logging.basicConfig(level=logging.INFO)
+from cv_processing import extract_cv_data
+from email_service import send_followup_email
 
 
 load_dotenv(override=True)
 app=Flask(__name__)
+
+
+#Blob config
+blob_account_name=os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
+blob_account_key=os.getenv("AZURE_STORAGE_ACCOUNT_KEY")
+blob_container_name="cv-uploads"
+
+blob_service_client=BlobServiceClient(f"https://{blob_account_name}.blob.core.windows.net",credential=blob_account_key)
+
+# #computer vision config
+# vision_endpoint=os.getenv("AZURE_VISION_ENDPOINT")
+# vision_key=os.getenv("AZURE_VISION_KEY")
+# vision_client=VisionClient(vision_endpoint, vision_key)
+
+# #gmail smtp config
+# gmail_user=os.getenv("GMAIL_USER")
+# gmail_pass=os.getenv("GMAIL_PASS")
+
+
 
 #uploading directory
 upload_folder="uploads"
@@ -50,40 +69,38 @@ def upload_cv():
     file_path=os.path.join(app.config["upload_folder"], filename)
     file.save(file_path)
 
-    #upload to gdrive
-    drive_link=upload_to_drive(file_path)
+    #upload to blob stoage
+    blob_client = blob_service_client.get_blob_client(container=blob_container_name, blob=filename)
+    with open(file_path, "rb") as data:
+        blob_client.upload_blob(data, overwrite=True)
 
-    #extracting data from cv
-    cv_data=extract_cv_data(file_path)
+    blob_url = f"https://{blob_account_name}.blob.core.windows.net/{blob_account_name}/{filename}"
 
-    #get name and email of applicant
-    applicant_name = cv_data["personal_info"].get("name", "Applicant")
-    applicant_email = cv_data["personal_info"].get("email", "unknown@example.com")
-    print(applicant_email)
-    #storing in sheets
-    store_in_google_sheets(cv_data, drive_link)
+    # Extract text using Azure Computer Vision
+    cv_data = extract_cv_data(blob_url)
+    
 
-    # Send follow-up email
-    if applicant_email != "unknown@example.com":
+    # Store extracted data as JSON in Blob Storage
+    json_filename = f"{filename.rsplit('.', 1)[0]}.json"
+    json_blob_client = blob_service_client.get_blob_client(container=blob_container_name, blob=json_filename)
+    json_blob_client.upload_blob(json.dumps(cv_data), overwrite=True)
+
+    # Extract name & email from CV
+    applicant_name = cv_data.get("name", "Applicant")
+    applicant_email = cv_data.get("email", "")
+
+    # Send email if email exists
+    email_status = "No email sent"
+    if applicant_email:
         email_status = send_followup_email(applicant_email, applicant_name)
-        logging.info(f"Follow-up email status: {email_status}")
-    else:
-        logging.warning("No valid email found in CV data. Skipping follow-up email.")
 
-
-    logging.debug("Data stored in Google Sheets. Calling webhook")
-    #seding webhook
-    #webhook_response=send_webhook(cv_data, drive_link)
-    #logging.debug("Webhook response received", webhook_response)
-    #response data
-    response_data={
-        "cv_public_link":drive_link,
-        "cv_data":cv_data,
-        #"webhook_response":webhook_response,
-        "email_status": email_status if applicant_email != "unknown@example.com" else "No email sent"
-    }
-
-    return jsonify(response_data)
+    # Response
+    return jsonify({
+        "cv_public_link": blob_url,
+        "cv_data": cv_data,
+        "json_blob_url": f"https://{blob_account_name}.blob.core.windows.net/{blob_container_name}/{json_filename}",
+        "email_status": email_status
+    })
 
 if __name__=="__main__":
     app.run(debug=True)
