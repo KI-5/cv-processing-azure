@@ -16,11 +16,11 @@ jobs:
     - name: Login to Azure
       run: az login --service-principal -u ${{ secrets.AZURE_CLIENT_ID }} -p ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
 
-    - name: Build and push Docker image
-      run: |
-        az acr login --name jobappacr
-        docker build -t jobappacr.azurecr.io/jobapp-flask:latest .
-        docker push jobappacr.azurecr.io/jobapp-flask:latest
+    # - name: Build and push Docker image
+    #   run: |
+    #     az acr login --name jobappacr
+    #     docker build -t jobappacr.azurecr.io/jobapp-flask:latest .
+    #     docker push jobappacr.azurecr.io/jobapp-flask:latest
 
     - name: Deploy to Azure container instance
       run: |
